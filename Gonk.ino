@@ -1,6 +1,11 @@
 /*
  * Patrick's project...
  */
+
+
+// ** Change this, run tests 14 through 20
+#define TEST_PIN 14
+ 
 // include SPI, MP3 and SD libraries
 #include <SPI.h>
 #include <Adafruit_VS1053.h>
@@ -127,14 +132,15 @@ uint8_t nPin5Tracks = sizeof(Pin5Tracks)/sizeof(*Pin5Tracks);
 //uint8_t nPin11Tracks = sizeof(Pin11Tracks)/sizeof(*Pin11Tracks);
 uint8_t nPin12Tracks = sizeof(Pin12Tracks)/sizeof(*Pin12Tracks);
 
-// Pin IDs, these are the input pins (blank “” == play/pause)
-// { pin, vol, 0, “track name.mp3” }
+// Pin IDs, these are the input pins (blank ï¿½ï¿½ == play/pause)
+// { pin, vol, 0, ï¿½track name.mp3ï¿½ }
 struct InputPin Inputs[] = { { 0, 0, 0, 0, 0 },
                             // { 1, 10, 0, Pin1Tracks, nPin1Tracks },
                              { 2, 10, 0, Pin2Tracks, nPin2Tracks },
                              { 5, 10, 0, Pin5Tracks, nPin5Tracks },
                             // { 11, 10, 0, Pin11Tracks, nPin11Tracks },
                              { 12, 10, 0, Pin12Tracks, nPin12Tracks },
+                             { TEST_PIN, 10, 0, Pin12Tracks, nPin12Tracks },
                            };                                                                                                                                                          
 uint8_t nInputs = sizeof(Inputs)/sizeof(*Inputs);
 uint8_t Play = 0;
@@ -160,28 +166,22 @@ void playMusic(char *mp3,uint8_t vol) {
     Serial.println(mp3);
     exit();
   }
-Serial.print("Playing: ");
-Serial.println(mp3);
+  Serial.print("Playing: ");
+  Serial.println(mp3);
 }
 
 void setup() {
   // Init the serial port
   Serial.begin(9600);
-  delay(150);
-
+  
   // initialise the music player
   if(!Music.begin()) {
-     Serial.println(F("Couldn't find VS1053"));
+     Serial.println(F("No VS1053"));
      exit();
   }
 
   
   Music.setVolume(10,10);
-  //Music.sineTest(0x44, 500);    // Make a tone to indicate VS1053 is working
-  //Serial.print("before pause ");
-  //delay(1000);
-  //Serial.print("after pause ");
-  // set the input pins
   for(uint8_t pin=0;pin<nInputs;++pin) {
       pinMode((Inputs+pin)->pin,INPUT_PULLUP);
   }
@@ -189,10 +189,10 @@ void setup() {
 pinMode(LED_PIN, OUTPUT);
 
 if (! Music.useInterrupt(VS1053_FILEPLAYER_PIN_INT))
-   Serial.println(F("DREQ pin is not an interrupt pin")); 
+   Serial.println(F("DREQ not int")); 
 
 if (!SD.begin(CARDCS)) {
-    Serial.println(F("SD failed, or not present"));
+    Serial.println(F("SD failed"));
     exit();
   }
 
@@ -231,7 +231,7 @@ void loop() {
         // turn on LED
         digitalWrite(LED_PIN,HIGH);
         if((Inputs+pin)->tracks) {
-// Play random track
+          // Play random track
           uint8_t tk=random((Inputs+pin)->nTracks);
           Track *track=(Inputs+pin)->tracks+tk;
           // play track
@@ -246,7 +246,7 @@ void loop() {
       }
     }
     else if((Inputs+pin)->timeOn) {
-      // make sure pin not on for 10ms (handle switch bounce)
+      // make sure pin state held for 10ms (handle switch bounce)
       if((Inputs+pin)->timeOn+10<now) {
         // reset this pin
         (Inputs+pin)->timeOn=0;

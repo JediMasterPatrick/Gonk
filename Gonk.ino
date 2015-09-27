@@ -1,10 +1,6 @@
 /*
  * Patrick's project...
  */
-
-
-// ** Change this, run tests 14 through 20
-#define TEST_PIN 14
  
 // include SPI, MP3 and SD libraries
 #include <SPI.h>
@@ -34,6 +30,7 @@ struct Track {
 
 struct InputPin {
   uint8_t pin;
+  uint8_t gpio;
   uint8_t vol;
   unsigned long timeOn;
   struct Track *tracks;
@@ -135,14 +132,15 @@ uint8_t nPin12Tracks = sizeof(Pin12Tracks)/sizeof(*Pin12Tracks);
 // Pin IDs, these are the input pins (blank �� == play/pause)
 // { pin, vol, 0, �track name.mp3� }
 struct InputPin Inputs[] = { { 0, 0, 0, 0, 0 },
-                            // { 1, 10, 0, Pin1Tracks, nPin1Tracks },
-                             { 2, 10, 0, Pin2Tracks, nPin2Tracks },
-                             { 5, 10, 0, Pin5Tracks, nPin5Tracks },
-                            // { 11, 10, 0, Pin11Tracks, nPin11Tracks },
-                             { 12, 10, 0, Pin12Tracks, nPin12Tracks },
-                             { TEST_PIN, 10, 0, Pin12Tracks, nPin12Tracks },
+                             { 2, 0, 10, 0, Pin2Tracks, nPin2Tracks },
+                             { 5, 0, 10, 0, Pin5Tracks, nPin5Tracks },
+                             { 12, 0, 10, 0, Pin12Tracks, nPin12Tracks },
+                             // test GPIO pins, 0 & 1
+                             { 0, 1, 10, 0, Pin12Tracks, nPin12Tracks },
+                             { 1, 1, 10, 0, Pin12Tracks, nPin12Tracks },
                            };                                                                                                                                                          
 uint8_t nInputs = sizeof(Inputs)/sizeof(*Inputs);
+
 uint8_t Play = 0;
 
 // music player
@@ -183,27 +181,75 @@ void setup() {
   
   Music.setVolume(10,10);
   for(uint8_t pin=0;pin<nInputs;++pin) {
+    if(!(Inputs+pin)->gpio) {
       pinMode((Inputs+pin)->pin,INPUT_PULLUP);
+    }
+    else {
+      Music.GPIO_pinMode((Inputs+pin)->pin,INPUT);
+    }
   }
   
-pinMode(LED_PIN, OUTPUT);
+  pinMode(LED_PIN, OUTPUT);
 
-if (! Music.useInterrupt(VS1053_FILEPLAYER_PIN_INT))
+  if (! Music.useInterrupt(VS1053_FILEPLAYER_PIN_INT))
    Serial.println(F("DREQ not int")); 
 
-if (!SD.begin(CARDCS)) {
+  if (!SD.begin(CARDCS)) {
     Serial.println(F("SD failed"));
     exit();
   }
 
 }
 
-void loop() {
-  // 
+boolean readPin(struct InputPin *pin) {
+  return !pin->gpio
+            ?digitalRead(pin->pin)
+            :Music.GPIO_digitalRead(pin->pin);
+}
+
+void checkPins(struct InputPin *inputs,uint8_t n) {
   // current millisecond
   unsigned long now=millis();
+  // read the pins
+  for(uint8_t pin=0;pin<n;++pin) {
+    
+    // read the pin
+    if(readPin(Inputs+pin)) {
+      // make sure we haven't been set on before
+      if(!(inputs+pin)->timeOn) {
+        // set this pin to on!
+        (inputs+pin)->timeOn=now;
+        // turn on LED
+        digitalWrite(LED_PIN,HIGH);
+        if((inputs+pin)->tracks) {
+          // Play random track
+          uint8_t tk=random((inputs+pin)->nTracks);
+          Track *track=(inputs+pin)->tracks+tk;
+          // play track
+          playMusic(track->mp3,track->vol);
+         }
+         else {
+             Play=(Play+1)&1;
+             if(!Play) {
+               stopMusic();
+           }
+         }
+      }
+    }
+    else if((inputs+pin)->timeOn) {
+      // make sure pin state held for 10ms (handle switch bounce)
+      if((inputs+pin)->timeOn+10<now) {
+        // reset this pin
+        (inputs+pin)->timeOn=0;
+        // turn off LED
+        digitalWrite(LED_PIN,LOW);
+      }
+    }
+  }
+}
 
-
+void loop() {
+  
 //this is the gpiotest
 //  for (uint8_t i=0; i<8; i++) { 
 //    gMusic.GPIO_pinMode(i, OUTPUT);
@@ -220,41 +266,7 @@ void loop() {
 
 //this is the end of the gpiotest
   
-  // read the pins
-  for(uint8_t pin=0;pin<nInputs;++pin) {
-    // read the pin
-    if(digitalRead((Inputs+pin)->pin)) {
-      // make sure we haven't been set on before
-      if(!(Inputs+pin)->timeOn) {
-        // set this pin to on!
-        (Inputs+pin)->timeOn=now;
-        // turn on LED
-        digitalWrite(LED_PIN,HIGH);
-        if((Inputs+pin)->tracks) {
-          // Play random track
-          uint8_t tk=random((Inputs+pin)->nTracks);
-          Track *track=(Inputs+pin)->tracks+tk;
-          // play track
-          playMusic(track->mp3,track->vol);
-         }
-         else {
-             Play=(Play+1)&1;
-             if(!Play) {
-               stopMusic();
-           }
-         }
-      }
-    }
-    else if((Inputs+pin)->timeOn) {
-      // make sure pin state held for 10ms (handle switch bounce)
-      if((Inputs+pin)->timeOn+10<now) {
-        // reset this pin
-        (Inputs+pin)->timeOn=0;
-        // turn off LED
-        digitalWrite(LED_PIN,LOW);
-      }
-    }
-  }
+  checkPins(Inputs,nInputs);
   // playing anything?
   if(Play&&!Music.playingMusic) {
     // no, start something

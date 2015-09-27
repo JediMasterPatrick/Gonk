@@ -29,12 +29,12 @@ struct Track {
 };
 
 struct InputPin {
-  uint8_t pin;
-  uint8_t gpio;
-  uint8_t vol;
-  unsigned long timeOn;
-  struct Track *tracks;
-  uint8_t nTracks;
+  uint8_t pin;            // pin number
+  uint8_t gpio;           // is this a spio pin on the shield?
+  uint8_t vol;            // volume
+  unsigned long timeOn;   // ms time the pin pressed
+  struct Track *tracks;   // list of tracks
+  uint8_t nTracks;        // track count
 };
 
 // { vol, track}
@@ -129,8 +129,9 @@ uint8_t nPin5Tracks = sizeof(Pin5Tracks)/sizeof(*Pin5Tracks);
 //uint8_t nPin11Tracks = sizeof(Pin11Tracks)/sizeof(*Pin11Tracks);
 uint8_t nPin12Tracks = sizeof(Pin12Tracks)/sizeof(*Pin12Tracks);
 
-// Pin IDs, these are the input pins (blank �� == play/pause)
-// { pin, vol, 0, �track name.mp3� }
+// Pin IDs, these are the input pins
+// { pin, gpio, vol, 0, tracks, trackCount }
+// if tracks == 0, then play/pause sounds
 struct InputPin Inputs[] = { { 0, 0, 0, 0, 0 },
                              { 2, 0, 10, 0, Pin2Tracks, nPin2Tracks },
                              { 5, 0, 10, 0, Pin5Tracks, nPin5Tracks },
@@ -148,14 +149,17 @@ Adafruit_VS1053_FilePlayer Music = Adafruit_VS1053_FilePlayer(SHIELD_RESET, SHIE
 //Adafruit_VS1053_FilePlayer gMusic = Adafruit_VS1053_FilePlayer(SHIELD_RESET, SHIELD_CS, SHIELD_DCS, DREQ, CARDCS);
 
 void exit() {
+  // do nothing for ever
   while(1);
 }
 
+// stop the music
 void stopMusic() {
   Music.stopPlaying();
   Music.softReset();
 }
 
+// play a track
 void playMusic(char *mp3,uint8_t vol) {
   stopMusic();
   Music.setVolume(vol,vol);
@@ -168,45 +172,14 @@ void playMusic(char *mp3,uint8_t vol) {
   Serial.println(mp3);
 }
 
-void setup() {
-  // Init the serial port
-  Serial.begin(9600);
-  
-  // initialise the music player
-  if(!Music.begin()) {
-     Serial.println(F("No VS1053"));
-     exit();
-  }
-
-  
-  Music.setVolume(10,10);
-  for(uint8_t pin=0;pin<nInputs;++pin) {
-    if(!(Inputs+pin)->gpio) {
-      pinMode((Inputs+pin)->pin,INPUT_PULLUP);
-    }
-    else {
-      Music.GPIO_pinMode((Inputs+pin)->pin,INPUT);
-    }
-  }
-  
-  pinMode(LED_PIN, OUTPUT);
-
-  if (! Music.useInterrupt(VS1053_FILEPLAYER_PIN_INT))
-   Serial.println(F("DREQ not int")); 
-
-  if (!SD.begin(CARDCS)) {
-    Serial.println(F("SD failed"));
-    exit();
-  }
-
-}
-
+// reads the pin info
 boolean readPin(struct InputPin *pin) {
   return !pin->gpio
             ?digitalRead(pin->pin)
             :Music.GPIO_digitalRead(pin->pin);
 }
 
+// checks all the pins for button presses
 void checkPins(struct InputPin *inputs,uint8_t n) {
   // current millisecond
   unsigned long now=millis();
@@ -237,8 +210,8 @@ void checkPins(struct InputPin *inputs,uint8_t n) {
       }
     }
     else if((inputs+pin)->timeOn) {
-      // make sure pin state held for 10ms (handle switch bounce)
-      if((inputs+pin)->timeOn+10<now) {
+      // make sure pin state held for 25ms (handle switch bounce)
+      if((inputs+pin)->timeOn+25<now) {
         // reset this pin
         (inputs+pin)->timeOn=0;
         // turn off LED
@@ -248,24 +221,43 @@ void checkPins(struct InputPin *inputs,uint8_t n) {
   }
 }
 
-void loop() {
+// setup function
+void setup() {
+  // Init the serial port
+  Serial.begin(9600);
+  // init the psuedo random generator
+  randomSeed(millis());
+  // initialise the music player
+  if(!Music.begin()) {
+     Serial.println(F("No VS1053"));
+     exit();
+  }
   
-//this is the gpiotest
-//  for (uint8_t i=0; i<8; i++) { 
-//    gMusic.GPIO_pinMode(i, OUTPUT);
-//    
-//    gMusic.GPIO_digitalWrite(i, HIGH);
-//    Serial.print("GPIO: "); Serial.println(gMusic.GPIO_digitalRead(i));
-//    gMusic.GPIO_digitalWrite(i, LOW);
-//    Serial.print("GPIO: "); Serial.println(gMusic.GPIO_digitalRead(i));
-//
-//    gMusic.GPIO_pinMode(i, INPUT);
-//
-//    delay(100);  
-//  }
+  Music.setVolume(10,10);
+  for(uint8_t pin=0;pin<nInputs;++pin) {
+    if(!(Inputs+pin)->gpio) {
+      pinMode((Inputs+pin)->pin,INPUT_PULLUP);
+    }
+    else {
+      Music.GPIO_pinMode((Inputs+pin)->pin,INPUT);
+    }
+  }
+  
+  pinMode(LED_PIN, OUTPUT);
 
-//this is the end of the gpiotest
-  
+  if (! Music.useInterrupt(VS1053_FILEPLAYER_PIN_INT))
+   Serial.println(F("DREQ not int")); 
+
+  if (!SD.begin(CARDCS)) {
+    Serial.println(F("SD failed"));
+    exit();
+  }
+
+}
+
+// main loop
+void loop() {
+  // check the input pins for button presses
   checkPins(Inputs,nInputs);
   // playing anything?
   if(Play&&!Music.playingMusic) {
@@ -276,6 +268,4 @@ void loop() {
   }
   
 }
-
-
 
